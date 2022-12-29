@@ -25,7 +25,7 @@ This generator only supports C/C++, all other project types are ignored.
 
 ## What files get generated
 
-This generator generates the follwing files:
+This generator generates the following files:
 
 - \<WorkspaceName\>.code-workspace (only if not already exists)
 - .vscode/c_cpp_properties.json
