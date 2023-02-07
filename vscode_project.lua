@@ -88,45 +88,47 @@ end
 
 function m.vscode_launch(prj, launchFile)
 	for cfg in project.eachconfig(prj) do
-		local buildName = "Build " .. prj.name .. " (" .. cfg.name .. ")"
-		local target = path.getrelative(prj.workspace.location, prj.location)
-		local gdbPath = ""
-		if os.host() == "linux" then
-			gdbPath = os.outputof("which gdb")
-		end
-		local programPath = path.getrelative(prj.workspace.location, cfg.buildtarget.abspath)
+		if cfg.kind == "ConsoleApp" or cfg.kind == "WindowedApp" then --Ignore non executable configuration(s) in launch.json
+			local buildName = "Build " .. prj.name .. " (" .. cfg.name .. ")"
+			local target = path.getrelative(prj.workspace.location, prj.location)
+			local gdbPath = ""
+			if os.host() == "linux" then
+				gdbPath = os.outputof("which gdb")
+			end
+			local programPath = path.getrelative(prj.workspace.location, cfg.buildtarget.abspath)
 
-		launchFile:write('\t\t{\n')
-		launchFile:write(string.format('\t\t\t"name": "Run %s (%s)",\n', prj.name, cfg.name))
-		launchFile:write('\t\t\t"request": "launch",\n')
-		launchFile:write('\t\t\t"type": "cppdbg",\n')
-		launchFile:write(string.format('\t\t\t"program": "${workspaceRoot}/%s",\n', programPath))
-		launchFile:write('\t\t\t"linux":\n')
-		launchFile:write('\t\t\t{\n')
-		launchFile:write('\t\t\t\t"externalConsole": true,\n')
-		launchFile:write(string.format('\t\t\t\t"miDebuggerPath": "%s",\n', gdbPath))
-		launchFile:write('\t\t\t\t"MIMode": "gdb",\n')
-		launchFile:write('\t\t\t\t"setupCommands":\n')
-		launchFile:write('\t\t\t\t[\n')
-		launchFile:write('\t\t\t\t\t{\n')
-		launchFile:write('\t\t\t\t\t\t"text": "-enable-pretty-printing",\n')
-		launchFile:write('\t\t\t\t\t\t"description": "enable pretty printing",\n')
-		launchFile:write('\t\t\t\t\t\t"ignoreFailures": true,\n')
-		launchFile:write('\t\t\t\t\t},\n')
-		launchFile:write('\t\t\t\t],\n')
-		launchFile:write('\t\t\t},\n')
-		launchFile:write('\t\t\t"windows":\n')
-		launchFile:write('\t\t\t{\n')
-		launchFile:write('\t\t\t\t"console": "externalTerminal",\n')
-		launchFile:write('\t\t\t\t"type": "cppvsdbg",\n')
-		launchFile:write(string.format('\t\t\t\t"program": "${workspaceRoot}/%s",\n', programPath))
-		launchFile:write('\t\t\t},\n')
-		launchFile:write('\t\t\t"args": [],\n')
-		launchFile:write('\t\t\t"stopAtEntry": false,\n')
-		launchFile:write(string.format('\t\t\t"cwd": "${workspaceFolder}/%s",\n', target))
-		launchFile:write('\t\t\t"environment": [],\n')
-		launchFile:write(string.format('\t\t\t"preLaunchTask": "Build %s (%s)",\n', prj.name, cfg.name))
-		launchFile:write('\t\t},\n')
+			launchFile:write('\t\t{\n')
+			launchFile:write(string.format('\t\t\t"name": "Run %s (%s)",\n', prj.name, cfg.name))
+			launchFile:write('\t\t\t"request": "launch",\n')
+			launchFile:write('\t\t\t"type": "cppdbg",\n')
+			launchFile:write(string.format('\t\t\t"program": "${workspaceRoot}/%s",\n', programPath))
+			launchFile:write('\t\t\t"linux":\n')
+			launchFile:write('\t\t\t{\n')
+			launchFile:write('\t\t\t\t"externalConsole": true,\n')
+			launchFile:write(string.format('\t\t\t\t"miDebuggerPath": "%s",\n', gdbPath))
+			launchFile:write('\t\t\t\t"MIMode": "gdb",\n')
+			launchFile:write('\t\t\t\t"setupCommands":\n')
+			launchFile:write('\t\t\t\t[\n')
+			launchFile:write('\t\t\t\t\t{\n')
+			launchFile:write('\t\t\t\t\t\t"text": "-enable-pretty-printing",\n')
+			launchFile:write('\t\t\t\t\t\t"description": "enable pretty printing",\n')
+			launchFile:write('\t\t\t\t\t\t"ignoreFailures": true,\n')
+			launchFile:write('\t\t\t\t\t},\n')
+			launchFile:write('\t\t\t\t],\n')
+			launchFile:write('\t\t\t},\n')
+			launchFile:write('\t\t\t"windows":\n')
+			launchFile:write('\t\t\t{\n')
+			launchFile:write('\t\t\t\t"console": "externalTerminal",\n')
+			launchFile:write('\t\t\t\t"type": "cppvsdbg",\n')
+			launchFile:write(string.format('\t\t\t\t"program": "${workspaceRoot}/%s",\n', programPath))
+			launchFile:write('\t\t\t},\n')
+			launchFile:write('\t\t\t"args": [],\n')
+			launchFile:write('\t\t\t"stopAtEntry": false,\n')
+			launchFile:write(string.format('\t\t\t"cwd": "${workspaceFolder}/%s",\n', target))
+			launchFile:write('\t\t\t"environment": [],\n')
+			launchFile:write(string.format('\t\t\t"preLaunchTask": "Build %s (%s)",\n', prj.name, cfg.name))
+			launchFile:write('\t\t},\n')
+		end
 	end
 end
 
