@@ -165,14 +165,17 @@ function m.vscode_c_cpp_properties(prj, propsFile)
 		output = output .. '\t\t\t"includePath":\n'
 		output = output .. '\t\t\t[\n'
 		output = output .. '\t\t\t\t"${workspaceFolder}/**"'
-		if #cfg.includedirs > 0 then
+		if #cfg.includedirs > 0 or #cfg.externalincludedirs > 0 then
 			output = output .. ','
 		end
 		output = output .. '\n'
 		for _, includedir in ipairs(cfg.includedirs) do
 			output = output .. string.format('\t\t\t\t"%s",\n', includedir)
 		end
-		if #cfg.includedirs > 0 then
+		for _, includedir in ipairs(cfg.externalincludedirs) do
+			output = output .. string.format('\t\t\t\t"%s",\n', includedir)
+		end
+		if #cfg.includedirs > 0 or #cfg.externalincludedirs > 0 then
 			output = output:sub(1, -3) .. '\n'
 		end
 		output = output .. '\t\t\t],\n'
