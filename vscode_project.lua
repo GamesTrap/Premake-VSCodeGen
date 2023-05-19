@@ -90,6 +90,42 @@ function m.vscode_tasks(prj, tasksFile)
 	tasksFile:write(output)
 end
 
+function m.vscode_tasks_build_all(wks, tasksFile)
+	local output = ""
+
+	for cfg in p.workspace.eachconfig(wks) do
+		local buildName = "Build All (" .. cfg.name .. ")"
+
+		output = output .. '\t\t{\n'
+		output = output .. string.format('\t\t\t"label": "%s",\n', buildName)
+		output = output .. '\t\t\t"type": "shell",\n'
+		output = output .. '\t\t\t"linux":\n'
+		output = output .. '\t\t\t{\n'
+		output = output .. string.format('\t\t\t\t"command": "clear && time make config=%s all -j%s",\n', string.lower(cfg.name), m.getcorecount())
+		output = output .. '\t\t\t\t"problemMatcher": "$gcc",\n'
+		output = output .. '\t\t\t},\n'
+		output = output .. '\t\t\t"windows":\n'
+		output = output .. '\t\t\t{\n'
+		output = output .. '\t\t\t\t"command": "cls && msbuild",\n'
+		output = output .. '\t\t\t\t"args":\n'
+		output = output .. '\t\t\t\t[\n'
+		output = output .. string.format('\t\t\t\t\t"/m:%s",\n', m.getcorecount())
+		output = output .. string.format('\t\t\t\t\t"${workspaceRoot}/%s.sln",\n', wks.name)
+		output = output .. string.format('\t\t\t\t\t"/p:Configuration=%s",\n', cfg.name)
+		output = output .. string.format('\t\t\t\t\t"/t:Build",\n')
+		output = output .. '\t\t\t\t],\n'
+		output = output .. '\t\t\t\t"problemMatcher": "$msCompile",\n'
+		output = output .. '\t\t\t},\n'
+		output = output .. '\t\t\t"group":\n'
+		output = output .. '\t\t\t{\n'
+		output = output .. '\t\t\t\t"kind": "build",\n'
+		output = output .. '\t\t\t},\n'
+		output = output .. '\t\t},\n'
+	end
+
+	tasksFile:write(output)
+end
+
 function m.vscode_launch(prj, launchFile)
 	local output = ""
 

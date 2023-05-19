@@ -45,13 +45,21 @@ function vscode.generateWorkspace(wks)
     local propsFile = io.open(wks.location .. "/.vscode/c_cpp_properties.json", "w")
     propsFile:write('{\n\t"version": 4,\n\t"configurations":\n\t[\n')
 
+    local containsSupportedProject = 0
+
     -- For each project
     for prj in p.workspace.eachproject(wks) do
         if project.isc(prj) or project.iscpp(prj) then
+            containsSupportedProject = containsSupportedProject + 1
+
             vscode.project.vscode_tasks(prj, tasksFile)
             vscode.project.vscode_launch(prj, launchFile)
             vscode.project.vscode_c_cpp_properties(prj, propsFile)
         end
+    end
+
+    if containsSupportedProject > 0 then
+        vscode.project.vscode_tasks_build_all(wks, tasksFile)
     end
 
     propsFile:write('\t]\n}\n')
