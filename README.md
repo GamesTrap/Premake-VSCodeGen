@@ -20,7 +20,6 @@ Note: On Windows make sure that `msbuild.exe` is accessible from CMD.
 ## Limitations
 
 Currently this generater only supports a single [Premake Workspace](https://premake.github.io/docs/workspace/).  
-Currently the generated tasks will only use 3/4 of the available CPU threads (guaranteed minimum is 1 thread).  
 This generator only supports C/C++, all other project types are ignored.  
 
 ## What files get generated

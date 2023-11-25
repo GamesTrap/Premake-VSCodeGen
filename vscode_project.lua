@@ -8,7 +8,7 @@
 --              Yehonatan Ballas
 --              Jan "GamesTrap" Schürkamp
 -- Created:     2013/05/06
--- Updated:     2022/12/29
+-- Updated:     2023/11/25
 -- Copyright:   (c) 2008-2020 Yehonatan Ballas, Jason Perkins and the Premake project
 --              (c) 2022-2023 Jan "GamesTrap" Schürkamp
 --
@@ -33,17 +33,24 @@ end
 function m.getcorecount()
 	local cores = 0
 
-	if os.host() == "windows" then
-		local result, errorcode = os.outputof("wmic cpu get NumberOfCores")
-		for core in result:gmatch("%d+") do
-			cores = cores + core
+	-- Check command-line arguments for threads ovveride
+	for i, arg in ipairs(_ARGS) do
+		if (arg == "--threads") or (arg == "-t") then
+			cores = tonumber(_ARGS[i + 1])
 		end
-	elseif os.host() == "linux" then
-		local result, errorcode = os.outputof("nproc")
-		cores = result
 	end
 
-	cores = math.ceil(cores * 0.75)
+	if cores == 0 then
+		if os.host() == "windows" then
+			local result, errorcode = os.outputof("wmic cpu get NumberOfCores")
+			for core in result:gmatch("%d+") do
+				cores = cores + core
+			end
+		elseif os.host() == "linux" then
+			local result, errorcode = os.outputof("nproc")
+			cores = tonumber(result)
+		end
+	end
 
 	if cores <= 0 then
 		cores = 1

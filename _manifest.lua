@@ -1,6 +1,6 @@
 --
 -- Name:        _manifest.lua
--- Purpose:     Define the cmake action.
+-- Purpose:     Define the premake action.
 -- Author:      Ryan Pusztai
 -- Modified by: Andrea Zanellato
 --              Andrew Gough
@@ -8,9 +8,9 @@
 --              Yehonatan Ballas
 --              Jan "GamesTrap" Schürkamp
 -- Created:     2013/05/06
--- Updated:     2022/12/29
+-- Updated:     2023/11/25
 -- Copyright:   (c) 2008-2020 Jason Perkins and the Premake project
---              (c) 2022 Jan "GamesTrap" Schürkamp
+--              (c) 2022-2023 Jan "GamesTrap" Schürkamp
 --
 
 return
