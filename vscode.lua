@@ -9,7 +9,7 @@
 --              Yehonatan Ballas
 --              Jan "GamesTrap" Schürkamp
 -- Created:     2013/05/06
--- Updated:     2022/12/29
+-- Updated:     2023/12/08
 -- Copyright:   (c) 2008-2020 Jason Perkins and the Premake project
 --              (c) 2022-2023 Jan "GamesTrap" Schürkamp
 --
@@ -17,11 +17,9 @@
 local p = premake
 
 p.modules.vscode = {}
-p.modules.vscode._VERSION = p._VERSION
 
 local vscode = p.modules.vscode
 local project = p.project
-
 
 function vscode.generateWorkspace(wks)
     -- Only create workspace file if it doesnt already exist

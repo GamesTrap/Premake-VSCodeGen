@@ -2,7 +2,9 @@
 
 [Visual Studio Code](https://code.visualstudio.com/) workspace generator for [Premake](https://github.com/premake/premake-core).
 
-Supports GCC (& Clang, untested) through Make and MSVC through MSBuild.
+Supports GCC, Clang and MSVC through Make, Ninja or Visual Studio Solution file.
+
+Note: For ninja you also need [premake-ninja](https://github.com/GamesTrap/premake-ninja).
 
 ## Usage
 
@@ -13,9 +15,10 @@ Supports GCC (& Clang, untested) through Make and MSVC through MSBuild.
 ```
 premake5 gmake2/vs2022
 premake5 vscode
+premake5 vscode --[make, ninja, vs]
 ```
 
-Note: On Windows make sure that `msbuild.exe` is accessible from CMD.
+Note: On Windows make sure that `msbuild.exe` is accessible from CMD. For Ninja please use the [Visual Studio Developer Command Prompt](https://learn.microsoft.com/en-us/visualstudio/ide/reference/command-prompt-powershell).
 
 ## Limitations
 

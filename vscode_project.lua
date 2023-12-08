@@ -8,7 +8,7 @@
 --              Yehonatan Ballas
 --              Jan "GamesTrap" Schürkamp
 -- Created:     2013/05/06
--- Updated:     2023/11/25
+-- Updated:     2023/12/08
 -- Copyright:   (c) 2008-2020 Yehonatan Ballas, Jason Perkins and the Premake project
 --              (c) 2022-2023 Jan "GamesTrap" Schürkamp
 --
@@ -21,14 +21,6 @@ local vscode = p.modules.vscode
 
 vscode.project = {}
 local m = vscode.project
-
-function m.getcompiler(cfg)
-	local toolset = p.tools[_OPTIONS.cc or cfg.toolset or p.CLANG]
-	if not toolset then
-		error("Invalid toolset '" + (_OPTIONS.cc or cfg.toolset) + "'")
-	end
-	return toolset
-end
 
 function m.getcorecount()
 	local cores = 0
@@ -46,7 +38,7 @@ function m.getcorecount()
 			for core in result:gmatch("%d+") do
 				cores = cores + core
 			end
-		elseif os.host() == "linux" then
+		else
 			local result, errorcode = os.outputof("nproc")
 			cores = tonumber(result)
 		end
@@ -59,34 +51,73 @@ function m.getcorecount()
 	return cores
 end
 
+function m.getlinuxcompilecommand(cfgName, prjName, coreCount)
+	if(_OPTIONS["action"]) then
+		if(_OPTIONS["action"] == "make") then
+			return string.format('clear && time make config=%s %s -j%s', string.lower(cfgName), prjName, coreCount)
+		elseif (_OPTIONS["action"] == "ninja") then
+			return string.format('clear && time ninja %s_%s -j%s', prjName, cfgName, coreCount)
+		end
+	end
+end
+
+function m.getwindowscompilecommand(cfgName, prjName, coreCount)
+	if(_OPTIONS["action"]) then
+		if(_OPTIONS["action"] == "vs") then
+			return 'cls && msbuild'
+		elseif(_OPTIONS["action"] == "make") then
+			return string.format('cls && make config=%s %s -j%s', string.lower(cfgName), prjName, coreCount)
+		elseif (_OPTIONS["action"] == "ninja") then
+			return string.format('cls && ninja %s_%s -j%s', prjName, cfgName, coreCount)
+		end
+	end
+end
+
+function m.getwindowscompileargs(wksName, cfgName, target, coreCount)
+	args = {}
+
+	if(_OPTIONS["action"] and _OPTIONS["action"] == "vs") then
+		table.insert(args, string.format('/m:%s', coreCount))
+		table.insert(args, string.format('${workspaceRoot}/%s.sln', wksName))
+		table.insert(args, string.format('/p:Configuration=%s', cfgName))
+		table.insert(args, string.format('/t:%s', target))
+	end
+
+	return args
+end
+
 function m.vscode_tasks(prj, tasksFile)
 	local output = ""
 
 	for cfg in project.eachconfig(prj) do
 		local buildName = "Build " .. prj.name .. " (" .. cfg.name .. ")"
-		local target = path.getrelative(prj.workspace.location, prj.location)
-		target = target:gsub("/", "\\\\")
+		local target = path.translate(path.getrelative(prj.workspace.location, prj.location))
 
 		output = output .. '\t\t{\n'
 		output = output .. string.format('\t\t\t"label": "%s",\n', buildName)
 		output = output .. '\t\t\t"type": "shell",\n'
-		output = output .. '\t\t\t"linux":\n'
-		output = output .. '\t\t\t{\n'
-		output = output .. string.format('\t\t\t\t"command": "clear && time make config=%s %s -j%s",\n', string.lower(cfg.name), prj.name, m.getcorecount())
-		output = output .. '\t\t\t\t"problemMatcher": "$gcc",\n'
-		output = output .. '\t\t\t},\n'
-		output = output .. '\t\t\t"windows":\n'
-		output = output .. '\t\t\t{\n'
-		output = output .. '\t\t\t\t"command": "cls && msbuild",\n'
-		output = output .. '\t\t\t\t"args":\n'
-		output = output .. '\t\t\t\t[\n'
-		output = output .. string.format('\t\t\t\t\t"/m:%s",\n', m.getcorecount())
-		output = output .. string.format('\t\t\t\t\t"${workspaceRoot}/%s.sln",\n', prj.workspace.name)
-		output = output .. string.format('\t\t\t\t\t"/p:Configuration=%s",\n', cfg.name)
-		output = output .. string.format('\t\t\t\t\t"/t:%s",\n', target)
-		output = output .. '\t\t\t\t],\n'
-		output = output .. '\t\t\t\t"problemMatcher": "$msCompile",\n'
-		output = output .. '\t\t\t},\n'
+		if os.target() ~= "windows" then
+			output = output .. '\t\t\t"linux":\n'
+			output = output .. '\t\t\t{\n'
+			output = output .. string.format('\t\t\t\t"command": "%s",\n', m.getlinuxcompilecommand(cfg.name, prj.name, m.getcorecount()))
+			output = output .. '\t\t\t\t"problemMatcher": "$gcc",\n'
+			output = output .. '\t\t\t},\n'
+		elseif os.target() == "windows" then
+			output = output .. '\t\t\t"windows":\n'
+			output = output .. '\t\t\t{\n'
+			output = output .. string.format('\t\t\t\t"command": "%s",\n', m.getwindowscompilecommand(cfg.name, prj.name, m.getcorecount()))
+			output = output .. '\t\t\t\t"args":\n'
+			output = output .. '\t\t\t\t[\n'
+			local winCompileArgs = m.getwindowscompileargs(prj.workspace.name, cfg.name, target, m.getcorecount())
+			if winCompileArgs then
+				for arg in m.getwindowscompileargs(prj.workspace.name, cfg.name, target, m.getcorecount()) do
+					output = output .. string.format('\t\t\t\t\t"%s",\n', arg)
+				end
+			end
+			output = output .. '\t\t\t\t],\n'
+			output = output .. '\t\t\t\t"problemMatcher": "$msCompile",\n'
+			output = output .. '\t\t\t},\n'
+		end
 		output = output .. '\t\t\t"group":\n'
 		output = output .. '\t\t\t{\n'
 		output = output .. '\t\t\t\t"kind": "build",\n'
@@ -95,6 +126,41 @@ function m.vscode_tasks(prj, tasksFile)
 	end
 
 	tasksFile:write(output)
+end
+
+function m.getlinuxcompileallcommand(cfgName, coreCount)
+	if(_OPTIONS["action"]) then
+		if(_OPTIONS["action"] == "make") then
+			return string.format('clear && time make config=%s all -j%s', string.lower(cfgName), coreCount)
+		elseif (_OPTIONS["action"] == "ninja") then
+			return string.format('clear && time ninja %s -j%s', cfgName, coreCount)
+		end
+	end
+end
+
+function m.getwindowscompileallcommand(cfgName, coreCount)
+	if(_OPTIONS["action"]) then
+		if(_OPTIONS["action"] == "vs") then
+			return 'cls && msbuild'
+		elseif(_OPTIONS["action"] == "make") then
+			return string.format('cls && make config=%s all -j%s', string.lower(cfgName), coreCount)
+		elseif (_OPTIONS["action"] == "ninja") then
+			return string.format('cls && ninja %s -j%s', cfgName, coreCount)
+		end
+	end
+end
+
+function m.getwindowscompileallargs(wksName, cfgName, coreCount)
+	args = {}
+
+	if(_OPTIONS["action"] and _OPTIONS["action"] == "vs") then
+		table.insert(args, string.format('/m:%s', coreCount))
+		table.insert(args, string.format('${workspaceRoot}/%s.sln', wksName))
+		table.insert(args, string.format('/p:Configuration=%s', cfgName))
+		table.insert(args, '/t:Build')
+	end
+
+	return args
 end
 
 function m.vscode_tasks_build_all(wks, tasksFile)
@@ -106,23 +172,28 @@ function m.vscode_tasks_build_all(wks, tasksFile)
 		output = output .. '\t\t{\n'
 		output = output .. string.format('\t\t\t"label": "%s",\n', buildName)
 		output = output .. '\t\t\t"type": "shell",\n'
-		output = output .. '\t\t\t"linux":\n'
-		output = output .. '\t\t\t{\n'
-		output = output .. string.format('\t\t\t\t"command": "clear && time make config=%s all -j%s",\n', string.lower(cfg.name), m.getcorecount())
-		output = output .. '\t\t\t\t"problemMatcher": "$gcc",\n'
-		output = output .. '\t\t\t},\n'
-		output = output .. '\t\t\t"windows":\n'
-		output = output .. '\t\t\t{\n'
-		output = output .. '\t\t\t\t"command": "cls && msbuild",\n'
-		output = output .. '\t\t\t\t"args":\n'
-		output = output .. '\t\t\t\t[\n'
-		output = output .. string.format('\t\t\t\t\t"/m:%s",\n', m.getcorecount())
-		output = output .. string.format('\t\t\t\t\t"${workspaceRoot}/%s.sln",\n', wks.name)
-		output = output .. string.format('\t\t\t\t\t"/p:Configuration=%s",\n', cfg.name)
-		output = output .. string.format('\t\t\t\t\t"/t:Build",\n')
-		output = output .. '\t\t\t\t],\n'
-		output = output .. '\t\t\t\t"problemMatcher": "$msCompile",\n'
-		output = output .. '\t\t\t},\n'
+		if os.target() ~= "windows" then
+			output = output .. '\t\t\t"linux":\n'
+			output = output .. '\t\t\t{\n'
+			output = output .. string.format('\t\t\t\t"command": "%s",\n', m.getlinuxcompileallcommand(cfg.name, m.getcorecount()))
+			output = output .. '\t\t\t\t"problemMatcher": "$gcc",\n'
+			output = output .. '\t\t\t},\n'
+		elseif os.target() == "windows" then
+			output = output .. '\t\t\t"windows":\n'
+			output = output .. '\t\t\t{\n'
+			output = output .. string.format('\t\t\t\t"command": "%s",\n', m.getwindowscompileallcommand(cfg.name, m.getcorecount()))
+			output = output .. '\t\t\t\t"args":\n'
+			output = output .. '\t\t\t\t[\n'
+			local winCompileArgs = m.getwindowscompileallargs(wks.name, cfg.name, m.getcorecount())
+			if winCompileArgs then
+				for arg in winCompileArgs do
+					output = output .. string.format('\t\t\t\t\t"%s",\n', arg)
+				end
+			end
+			output = output .. '\t\t\t\t],\n'
+			output = output .. '\t\t\t\t"problemMatcher": "$msCompile",\n'
+			output = output .. '\t\t\t},\n'
+		end
 		output = output .. '\t\t\t"group":\n'
 		output = output .. '\t\t\t{\n'
 		output = output .. '\t\t\t\t"kind": "build",\n'
@@ -151,32 +222,35 @@ function m.vscode_launch(prj, launchFile)
 			output = output .. '\t\t\t"request": "launch",\n'
 			output = output .. '\t\t\t"type": "cppdbg",\n'
 			output = output .. string.format('\t\t\t"program": "${workspaceRoot}/%s",\n', programPath)
-			output = output .. '\t\t\t"linux":\n'
-			output = output .. '\t\t\t{\n'
-			output = output .. string.format('\t\t\t\t"name": "Run %s (%s)",\n', prj.name, cfg.name)
-			output = output .. '\t\t\t\t"type": "cppdbg",\n'
-			output = output .. '\t\t\t\t"request": "launch",\n'
-			output = output .. string.format('\t\t\t\t"program": "${workspaceRoot}/%s",\n', programPath)
-			output = output .. '\t\t\t\t"externalConsole": true,\n'
-			output = output .. string.format('\t\t\t\t"miDebuggerPath": "%s",\n', gdbPath)
-			output = output .. '\t\t\t\t"MIMode": "gdb",\n'
-			output = output .. '\t\t\t\t"setupCommands":\n'
-			output = output .. '\t\t\t\t[\n'
-			output = output .. '\t\t\t\t\t{\n'
-			output = output .. '\t\t\t\t\t\t"text": "-enable-pretty-printing",\n'
-			output = output .. '\t\t\t\t\t\t"description": "enable pretty printing",\n'
-			output = output .. '\t\t\t\t\t\t"ignoreFailures": true,\n'
-			output = output .. '\t\t\t\t\t},\n'
-			output = output .. '\t\t\t\t],\n'
-			output = output .. '\t\t\t},\n'
-			output = output .. '\t\t\t"windows":\n'
-			output = output .. '\t\t\t{\n'
-			output = output .. string.format('\t\t\t\t"name": "Run %s (%s)",\n', prj.name, cfg.name)
-			output = output .. '\t\t\t\t"console": "externalTerminal",\n'
-			output = output .. '\t\t\t\t"type": "cppvsdbg",\n'
-			output = output .. '\t\t\t\t"request": "launch",\n'
-			output = output .. string.format('\t\t\t\t"program": "${workspaceRoot}/%s",\n', programPath)
-			output = output .. '\t\t\t},\n'
+			if os.target() ~= "windows" then
+				output = output .. '\t\t\t"linux":\n'
+				output = output .. '\t\t\t{\n'
+				output = output .. string.format('\t\t\t\t"name": "Run %s (%s)",\n', prj.name, cfg.name)
+				output = output .. '\t\t\t\t"type": "cppdbg",\n'
+				output = output .. '\t\t\t\t"request": "launch",\n'
+				output = output .. string.format('\t\t\t\t"program": "${workspaceRoot}/%s",\n', programPath)
+				output = output .. '\t\t\t\t"externalConsole": true,\n'
+				output = output .. string.format('\t\t\t\t"miDebuggerPath": "%s",\n', gdbPath)
+				output = output .. '\t\t\t\t"MIMode": "gdb",\n'
+				output = output .. '\t\t\t\t"setupCommands":\n'
+				output = output .. '\t\t\t\t[\n'
+				output = output .. '\t\t\t\t\t{\n'
+				output = output .. '\t\t\t\t\t\t"text": "-enable-pretty-printing",\n'
+				output = output .. '\t\t\t\t\t\t"description": "enable pretty printing",\n'
+				output = output .. '\t\t\t\t\t\t"ignoreFailures": true,\n'
+				output = output .. '\t\t\t\t\t},\n'
+				output = output .. '\t\t\t\t],\n'
+				output = output .. '\t\t\t},\n'
+			elseif os.target() == "windows" then
+				output = output .. '\t\t\t"windows":\n'
+				output = output .. '\t\t\t{\n'
+				output = output .. string.format('\t\t\t\t"name": "Run %s (%s)",\n', prj.name, cfg.name)
+				output = output .. '\t\t\t\t"console": "externalTerminal",\n'
+				output = output .. '\t\t\t\t"type": "cppvsdbg",\n'
+				output = output .. '\t\t\t\t"request": "launch",\n'
+				output = output .. string.format('\t\t\t\t"program": "${workspaceRoot}/%s",\n', programPath)
+				output = output .. '\t\t\t},\n'
+			end
 			output = output .. '\t\t\t"args": [],\n'
 			output = output .. '\t\t\t"stopAtEntry": false,\n'
 			output = output .. string.format('\t\t\t"cwd": "${workspaceFolder}/%s",\n', target)
