@@ -9,9 +9,9 @@
 --              Yehonatan Ballas
 --              Jan "GamesTrap" Schürkamp
 -- Created:     2013/05/06
--- Updated:     2023/12/08
+-- Updated:     2025/11/04
 -- Copyright:   (c) 2008-2020 Jason Perkins and the Premake project
---              (c) 2022-2023 Jan "GamesTrap" Schürkamp
+--              (c) 2022-2025 Jan "GamesTrap" Schürkamp
 --
 
 local p = premake
@@ -19,59 +19,121 @@ local p = premake
 p.modules.vscode = {}
 
 local vscode = p.modules.vscode
-local project = p.project
 
-function vscode.generateWorkspace(wks)
-    -- Only create workspace file if it doesnt already exist
-    if not os.isfile(wks.location .. "/" .. wks.name .. ".code-workspace") then
-        local codeWorkspaceFile = io.open(wks.location .. "/" .. wks.name .. ".code-workspace", "w")
-        codeWorkspaceFile:write('{\n\t"folders":\n\t[\n\t\t{\n\t\t\t"path": ".",\n\t\t},\n\t],\n}\n')
-        codeWorkspaceFile:close()
-    end
+local function GetCProjects(wks)
+    local list = {}
 
-    local startString = '{\n\t"version": "%s",\n\t"%s":\n\t[\n'
-
-    -- Create tasks.json file
-    local tasksFile = io.open(wks.location .. "/.vscode/tasks.json", "w")
-    tasksFile:write('{\n\t"version": "2.0.0",\n\t"tasks":\n\t[\n')
-
-    -- Create launch.json file
-    local launchFile = io.open(wks.location .. "/.vscode/launch.json", "w")
-    launchFile:write('{\n\t"version": "2.0.0",\n\t"configurations":\n\t[\n')
-
-    -- Create launch.json file
-    local propsFile = io.open(wks.location .. "/.vscode/c_cpp_properties.json", "w")
-    propsFile:write('{\n\t"version": 4,\n\t"configurations":\n\t[\n')
-
-    local containsSupportedProject = 0
-
-    -- For each project
     for prj in p.workspace.eachproject(wks) do
-        if project.isc(prj) or project.iscpp(prj) then
-            containsSupportedProject = containsSupportedProject + 1
-
-            vscode.project.vscode_tasks(prj, tasksFile)
-            vscode.project.vscode_launch(prj, launchFile)
-            vscode.project.vscode_c_cpp_properties(prj, propsFile)
+        if p.project.isc(prj) or p.project.iscpp(prj) then
+            list[#list + 1] = prj
         end
     end
 
-    if containsSupportedProject > 0 then
-        vscode.project.vscode_tasks_build_all(wks, tasksFile)
+    return list
+end
+
+local function WriteFile(path, contentWriter)
+    local file = io.open(path, "w")
+    if not file then
+        return
     end
 
-    propsFile:write('\t]\n}\n')
-    propsFile:close()
+    contentWriter(file)
+    file:close()
+end
 
-    launchFile:write('\t]\n}\n')
-    launchFile:close()
+-- Create .code-workspace file if it doesnt already exist
+local function GenerateVSCodeWorkspaceFile(wks)
+    local path = string.format("%s/%s.code-workspace", wks.location, wks.name)
+    if os.isfile(path) then
+        return
+    end
 
-    tasksFile:write('\t]\n}\n')
-    tasksFile:close()
+    WriteFile(path, function(f)
+        f:write([[
+{
+    "folders":
+    [
+        {
+            "path": "."
+        }
+    ]
+}
+]])
+    end)
+end
+
+local function EnsureVSCodeDir(wks)
+    local dir = string.format("%s/.vscode", wks.location)
+    os.mkdir(dir)
+end
+
+-- Create tasks.json file
+local function GenerateTasksFile(wks, cProjects)
+    EnsureVSCodeDir(wks)
+    local path = string.format("%s/.vscode/tasks.json", wks.location)
+
+    WriteFile(path, function(f)
+        f:write('{\n\t"version": "2.0.0",\n\t"tasks":\n\t[\n')
+
+        for _, prj in ipairs(cProjects) do
+            vscode.project.vscode_tasks(prj, f)
+        end
+
+        if #cProjects > 0 then
+            vscode.project.vscode_tasks_build_all(wks, f)
+        end
+
+        f:write('\t]\n}\n')
+    end)
+end
+
+-- Create launch.json file
+local function GenerateLaunchFile(wks, cProjects)
+    EnsureVSCodeDir(wks)
+    local path = string.format("%s/.vscode/launch.json", wks.location)
+
+    WriteFile(path, function(f)
+        f:write('{\n\t"version": "2.0.0",\n\t"configurations":\n\t[\n')
+
+        for _, prj in ipairs(cProjects) do
+            vscode.project.vscode_launch(prj, f)
+        end
+
+        f:write('\t]\n}\n')
+    end)
+end
+
+-- Create c_cpp_properties.json file
+local function GenerateCCppPropertiesFile(wks, cProjects)
+    if #cProjects == 0 then
+        return
+    end
+
+    EnsureVSCodeDir(wks)
+    local path = string.format("%s/.vscode/c_cpp_properties.json", wks.location)
+
+    WriteFile(path, function(f)
+        f:write('{\n\t"version": 4,\n\t"configurations":\n\t[\n')
+
+        for _, prj in ipairs(cProjects) do
+            vscode.project.vscode_c_cpp_properties(prj, f)
+        end
+
+        f:write('\t]\n}\n')
+    end)
+end
+
+function vscode.generateWorkspace(wks)
+    local cProjects = GetCProjects(wks)
+
+    GenerateVSCodeWorkspaceFile(wks)
+    GenerateTasksFile(wks, cProjects)
+    GenerateLaunchFile(wks, cProjects)
+    GenerateCCppPropertiesFile(wks, cProjects)
 end
 
 include("vscode_project.lua")
-
 include("_preload.lua")
 
 return vscode
