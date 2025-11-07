@@ -15,92 +15,86 @@
 --
 
 local p = premake
-
-p.modules.vscode = {}
-
-local vscode = p.modules.vscode
+local vscode = {}
+p.modules.vscode = vscode
 
 local function GetCProjects(wks)
     local list = {}
+    local idx = 1
 
     for prj in p.workspace.eachproject(wks) do
         if p.project.isc(prj) or p.project.iscpp(prj) then
-            list[#list + 1] = prj
+            list[idx] = prj
+            idx = idx + 1
         end
     end
 
     return list
 end
 
-local function WriteFile(path, contentWriter)
-    local file = io.open(path, "w")
-    if not file then
-        return
-    end
-
-    contentWriter(file)
-    file:close()
-end
-
 -- Create .code-workspace file if it doesnt already exist
 local function GenerateVSCodeWorkspaceFile(wks)
-    local path = string.format("%s/%s.code-workspace", wks.location, wks.name)
-    if os.isfile(path) then
+    local workspaceFilename = string.format("%s.code-workspace", wks.name)
+    local workspacePath = p.filename(wks, workspaceFilename)
+
+    if os.isfile(workspacePath) then
         return
     end
 
-    WriteFile(path, function(f)
-        f:write([[
-{
-    "folders":
-    [
-        {
-            "path": "."
-        }
-    ]
-}
-]])
+    p.generate(wks, workspaceFilename, function(wks)
+        p.push('{')
+        p.w('"folders":')
+        p.push('[')
+        p.push('{')
+        p.w('"path": "."')
+        p.pop('}')
+        p.pop(']')
+        p.pop('}')
+        p.outln('')
     end)
-end
-
-local function EnsureVSCodeDir(wks)
-    local dir = string.format("%s/.vscode", wks.location)
-    os.mkdir(dir)
 end
 
 -- Create tasks.json file
 local function GenerateTasksFile(wks, cProjects)
-    EnsureVSCodeDir(wks)
-    local path = string.format("%s/.vscode/tasks.json", wks.location)
+    local tasksPath = string.format("%s/.vscode/tasks.json", wks.location)
 
-    WriteFile(path, function(f)
-        f:write('{\n\t"version": "2.0.0",\n\t"tasks":\n\t[\n')
+    p.generate(wks, tasksPath, function(wks)
+        p.push('{')
+        p.w('"version": "2.0.0",')
+        p.w('"tasks":')
+        p.push('[')
 
         for _, prj in ipairs(cProjects) do
-            vscode.project.vscode_tasks(prj, f)
+            vscode.project.vscode_tasks(prj)
         end
 
         if #cProjects > 0 then
-            vscode.project.vscode_tasks_build_all(wks, f)
+            vscode.project.vscode_tasks_build_all(wks)
         end
 
-        f:write('\t]\n}\n')
+        p.pop(']')
+        p.pop('}')
+        p.outln('')
     end)
 end
 
 -- Create launch.json file
 local function GenerateLaunchFile(wks, cProjects)
-    EnsureVSCodeDir(wks)
-    local path = string.format("%s/.vscode/launch.json", wks.location)
+    local launchPath = string.format("%s/.vscode/launch.json", wks.location)
 
-    WriteFile(path, function(f)
-        f:write('{\n\t"version": "2.0.0",\n\t"configurations":\n\t[\n')
+    p.generate(wks, launchPath, function(wks)
+        p.push('{')
+        p.w('"version": "2.0.0",')
+        p.w('"configurations":')
+        p.push('[')
 
-        for _, prj in ipairs(cProjects) do
-            vscode.project.vscode_launch(prj, f)
+        for idx, prj in ipairs(cProjects) do
+            vscode.project.vscode_launch(prj, idx == #cProjects)
         end
 
-        f:write('\t]\n}\n')
+        p.pop(']')
+        p.pop('}')
+        p.outln('')
     end)
 end
 
@@ -110,17 +104,21 @@ local function GenerateCCppPropertiesFile(wks, cProjects)
         return
     end
 
-    EnsureVSCodeDir(wks)
-    local path = string.format("%s/.vscode/c_cpp_properties.json", wks.location)
+    local ccppPropertiesPath = string.format("%s/.vscode/c_cpp_properties.json", wks.location)
 
-    WriteFile(path, function(f)
-        f:write('{\n\t"version": 4,\n\t"configurations":\n\t[\n')
+    p.generate(wks, ccppPropertiesPath, function(wks)
+        p.push('{')
+        p.w('"version": 4,')
+        p.w('"configurations":')
+        p.push('[')
 
-        for _, prj in ipairs(cProjects) do
-            vscode.project.vscode_c_cpp_properties(prj, f)
+        for idx, prj in ipairs(cProjects) do
+            vscode.project.vscode_c_cpp_properties(prj, idx == #cProjects)
         end
 
-        f:write('\t]\n}\n')
+        p.pop(']')
+        p.pop('}')
+        p.outln('')
     end)
 end
 

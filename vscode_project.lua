@@ -18,299 +18,280 @@ local tree = p.tree
 local project = p.project
 local config = p.config
 local vscode = p.modules.vscode
-
 vscode.project = {}
 local m = vscode.project
 
-function m.getcorecount()
-	local cores = 0
+local function GetThreadCount()
+	local threads = 0
 
-	-- Check command-line arguments for threads ovveride
+	-- Check command-line arguments for threads override
 	for i, arg in ipairs(_ARGS) do
-		if (arg == "--threads") or (arg == "-t") then
-			cores = tonumber(_ARGS[i + 1])
+		if (arg == "--threads" or arg == "-t") and _ARGS[i + 1] then
+			threads = tonumber(_ARGS[i + 1]) or 0
+			break
 		end
 	end
 
-	if cores == 0 then
-		if os.host() == "windows" then
-			local result, errorcode = os.outputof("wmic cpu get NumberOfCores")
-			for core in result:gmatch("%d+") do
-				cores = cores + core
+	if threads > 0 then
+		return threads
+	end
+
+	-- Automatic threads detection
+	if os.host() == "windows" then
+		local result = os.outputof("wmic cpu get NumberOfLogicalProcessors")
+		for thread in result:gmatch("%d+") do
+			threads = threads + (tonumber(thread) or 0)
+		end
+	else
+		local result = os.outputof("nproc")
+		threads = tonumber(result) or 0
+	end
+
+	if threads <= 0 then
+		threads = 1
+	end
+
+	return threads
+end
+
+local function GetCompileCommand(system, action, cfgName, prjName, threadCount, all)
+	local threadArg = string.format("-j%s", threadCount)
+
+	local cmd = ""
+	if system == "windows" then
+		cmd = "cls && "
+	else
+		cmd = "clear && time "
+	end
+
+	if action == "make" then
+		return cmd .. string.format("make config=%s %s %s", string.lower(cfgName), all and "all" or prjName, threadArg)
+	elseif action == "ninja" then
+		return cmd .. string.format("ninja %s %s", all and cfgName or string.format("%s_%s", prjName, cfgName), threadArg)
+	elseif action == "vs" and system == "windows" then
+		return cmd .. "msbuild"
+	end
+
+	return nil
+end
+
+local function GetVSArgs(wksName, cfgName, target, threadCount, all)
+	if _OPTIONS["action"] ~= "vs" then
+		return {}
+	end
+
+	return
+	{
+		string.format('/m:%s', threadCount),
+		string.format('${workspaceRoot}/%s.sln', wksName),
+		string.format('/p:Configuration=%s', cfgName),
+		all and '/t:Build' or string.format('/t:%s', target)
+	}
+end
+
+function m.vscode_c_cpp_properties(prj, isLast)
+	local cdialect = prj.cdialect and string.lower(prj.cdialect) or "${default}"
+	local cppdialect = prj.cppdialect and string.lower(prj.cppdialect) or "${default}"
+
+	local cfgIdx = 1
+	for cfg in project.eachconfig(prj) do
+		p.push('{')
+		p.w('"name": "%s (%s)",', prj.name, cfg.name)
+		p.w('"includePath":')
+		p.push('[')
+		p.w('"${workspaceFolder}/**"%s', (#cfg.includedirs > 0 or #cfg.externalincludedirs > 0) and ',' or '')
+
+		if #cfg.includedirs > 0 or #cfg.externalincludedirs > 0 then
+			for idx, includedir in ipairs(cfg.includedirs) do
+				if idx == #cfg.includedirs and #cfg.externalincludedirs == 0 then
+					p.w('"%s"', includedir)
+				else
+					p.w('"%s",', includedir)
+				end
 			end
+			for idx, includedir in ipairs(cfg.externalincludedirs) do
+				if idx == #cfg.externalincludedirs then
+					p.w('"%s"', includedir)
+				else
+					p.w('"%s",', includedir)
+				end
+			end
+		end
+
+		p.pop('],')
+		p.w('"defines":')
+		p.push('[')
+
+		for defineIdx, define in ipairs(cfg.defines) do
+			if defineIdx == #cfg.defines then
+				p.w('"%s"', define:gsub('"','\\"'))
+			else
+				p.w('"%s",', define:gsub('"','\\"'))
+			end
+		end
+
+		p.pop('],')
+		p.w('"cStandard": "%s",', cdialect)
+		p.w('"cppStandard": "%s",', cppdialect)
+		p.w('"intelliSenseMode": "${default}"', cppdialect)
+
+		if isLast and cfgIdx == #prj._cfglist then
+			p.pop('}')
 		else
-			local result, errorcode = os.outputof("nproc")
-			cores = tonumber(result)
+			p.pop('},')
 		end
-	end
 
-	if cores <= 0 then
-		cores = 1
-	end
-
-	return cores
-end
-
-function m.getlinuxcompilecommand(cfgName, prjName, coreCount)
-	if(_OPTIONS["action"]) then
-		if(_OPTIONS["action"] == "make") then
-			return string.format('clear && time make config=%s %s -j%s', string.lower(cfgName), prjName, coreCount)
-		elseif (_OPTIONS["action"] == "ninja") then
-			return string.format('clear && time ninja %s_%s -j%s', prjName, cfgName, coreCount)
-		end
+		cfgIdx = cfgIdx + 1
 	end
 end
 
-function m.getwindowscompilecommand(cfgName, prjName, coreCount)
-	if(_OPTIONS["action"]) then
-		if(_OPTIONS["action"] == "vs") then
-			return 'cls && msbuild'
-		elseif(_OPTIONS["action"] == "make") then
-			return string.format('cls && make config=%s %s -j%s', string.lower(cfgName), prjName, coreCount)
-		elseif (_OPTIONS["action"] == "ninja") then
-			return string.format('cls && ninja %s_%s -j%s', prjName, cfgName, coreCount)
-		end
-	end
-end
+function m.vscode_launch(prj, isLast)
+	local target = path.getrelative(prj.workspace.location, prj.location)
+	local gdbPath = (os.host() ~= "windows") and os.outputof("which gdb") or nil
 
-function m.getwindowscompileargs(wksName, cfgName, target, coreCount)
-	args = {}
-
-	if(_OPTIONS["action"] and _OPTIONS["action"] == "vs") then
-		table.insert(args, string.format('/m:%s', coreCount))
-		table.insert(args, string.format('${workspaceRoot}/%s.sln', wksName))
-		table.insert(args, string.format('/p:Configuration=%s', cfgName))
-		table.insert(args, string.format('/t:%s', target))
-	end
-
-	return args
-end
-
-function m.vscode_tasks(prj, tasksFile)
-	local output = ""
-
+	local cfgIdx = 1
 	for cfg in project.eachconfig(prj) do
-		local buildName = "Build " .. prj.name .. " (" .. cfg.name .. ")"
-		local target = path.translate(path.getrelative(prj.workspace.location, prj.location))
+		if cfg.kind ~= "ConsoleApp" and cfg.kind ~= "WindowedApp" then --Ignore non executable configuration(s) in launch.json
+			cfgIdx = cfgIdx + 1
+			goto continue
+		end
 
-		output = output .. '\t\t{\n'
-		output = output .. string.format('\t\t\t"label": "%s",\n', buildName)
-		output = output .. '\t\t\t"type": "shell",\n'
+		local programPath = path.getrelative(prj.workspace.location, cfg.buildtarget.abspath)
+		local name = string.format("%s (%s)", prj.name, cfg.name)
+
+		p.push('{')
+
+		p.w('"name": "Run %s",', name)
+		p.w('"request": "launch",')
+		p.w('"type": "cppdbg",')
+		p.w('"program": "${workspaceRoot}/%s",', programPath)
+		if os.target ~= "linux" then
+			p.w('"linux":')
+			p.push('{')
+
+			p.w('"externalConsole": true%s', gdbPath and ',' or '')
+			if gdbPath then
+				p.w('"miDebuggerPath": "%s",', gdbPath)
+			end
+			p.w('"MIMode": "gdb",')
+			p.w('"setupCommands":')
+			p.push('[')
+			p.push('{')
+
+			p.w('"text": "-enable-pretty-printing",')
+			p.w('"description": "enable pretty printing",')
+			p.w('"ignoreFailures": true')
+
+			p.pop('},')
+			p.pop('],')
+			p.pop('},')
+		elseif os.target == "windows" then
+			p.w('"windows":')
+			p.push('{')
+
+			p.w('"console": "externalTerminal')
+
+			p.pop('},')
+		end
+
+		p.w('"args": [],')
+		p.w('"stopAtEntry": false,')
+		p.w('"cwd": "${workspaceFolder}/%s",', target)
+		p.w('"environment": [],')
+		p.w('"preLaunchTask": "Build %s"', name)
+
+		if isLast and cfgIdx == #prj._cfglist then
+			p.pop('}')
+		else
+			p.pop('},')
+		end
+
+		cfgIdx = cfgIdx + 1
+
+		::continue::
+	end
+end
+
+local function GenerateTasks(cfgs, cfgsSize, nameFn, cmdFn, argsFn, isLast)
+	local threadCount = GetThreadCount()
+
+	local cfgIdx = 1
+	for cfg in cfgs do
+		local buildName = nameFn(cfg)
+
+		p.push('{')
+
+		p.w('"label": "%s",', buildName)
+		p.w('"type": "shell",')
+
+		local cmd = cmdFn(os.target(), _OPTIONS["action"], cfg.name, threadCount)
 		if os.target() ~= "windows" then
-			output = output .. '\t\t\t"linux":\n'
-			output = output .. '\t\t\t{\n'
-			output = output .. string.format('\t\t\t\t"command": "%s",\n', m.getlinuxcompilecommand(cfg.name, prj.name, m.getcorecount()))
-			output = output .. '\t\t\t\t"problemMatcher": "$gcc",\n'
-			output = output .. '\t\t\t},\n'
-		elseif os.target() == "windows" then
-			output = output .. '\t\t\t"windows":\n'
-			output = output .. '\t\t\t{\n'
-			output = output .. string.format('\t\t\t\t"command": "%s",\n', m.getwindowscompilecommand(cfg.name, prj.name, m.getcorecount()))
-			output = output .. '\t\t\t\t"args":\n'
-			output = output .. '\t\t\t\t[\n'
-			local winCompileArgs = m.getwindowscompileargs(prj.workspace.name, cfg.name, target, m.getcorecount())
-			if winCompileArgs then
-				for arg in m.getwindowscompileargs(prj.workspace.name, cfg.name, target, m.getcorecount()) do
-					output = output .. string.format('\t\t\t\t\t"%s",\n', arg)
-				end
+			p.w('"linux":')
+			p.push('{')
+
+			p.w('"command": "%s",', cmd)
+			p.w('"problemMatcher": "$gcc"')
+
+			p.pop('},')
+		else
+			p.w('"windows":')
+			p.push('{')
+
+			p.w('"command": "%s",', cmd)
+			p.w('"args":')
+			p.push('[')
+
+			local args = argsFn(cfg, threadCount)
+			for argIdx, arg in ipairs(argsFn(cfg, threadCount)) do
+				p.w('"%s"%s', arg, argIdx == #args and ',' or '')
 			end
-			output = output .. '\t\t\t\t],\n'
-			output = output .. '\t\t\t\t"problemMatcher": "$msCompile",\n'
-			output = output .. '\t\t\t},\n'
-		end
-		output = output .. '\t\t\t"group":\n'
-		output = output .. '\t\t\t{\n'
-		output = output .. '\t\t\t\t"kind": "build",\n'
-		output = output .. '\t\t\t},\n'
-		output = output .. '\t\t},\n'
-	end
+			p.pop('],')
 
-	tasksFile:write(output)
-end
+			p.w('"problemMatcher": "$msCompile"')
 
-function m.getlinuxcompileallcommand(cfgName, coreCount)
-	if(_OPTIONS["action"]) then
-		if(_OPTIONS["action"] == "make") then
-			return string.format('clear && time make config=%s all -j%s', string.lower(cfgName), coreCount)
-		elseif (_OPTIONS["action"] == "ninja") then
-			return string.format('clear && time ninja %s -j%s', cfgName, coreCount)
+			p.pop('},')
 		end
-	end
-end
 
-function m.getwindowscompileallcommand(cfgName, coreCount)
-	if(_OPTIONS["action"]) then
-		if(_OPTIONS["action"] == "vs") then
-			return 'cls && msbuild'
-		elseif(_OPTIONS["action"] == "make") then
-			return string.format('cls && make config=%s all -j%s', string.lower(cfgName), coreCount)
-		elseif (_OPTIONS["action"] == "ninja") then
-			return string.format('cls && ninja %s -j%s', cfgName, coreCount)
+		p.w('"group":')
+		p.push('{')
+
+		p.w('"kind": "build"')
+
+		p.pop('}')
+
+		if isLast and cfgIdx == cfgsSize then
+			p.pop('}')
+		else
+			p.pop('},')
 		end
+
+		cfgIdx = cfgIdx + 1
 	end
 end
 
-function m.getwindowscompileallargs(wksName, cfgName, coreCount)
-	args = {}
-
-	if(_OPTIONS["action"] and _OPTIONS["action"] == "vs") then
-		table.insert(args, string.format('/m:%s', coreCount))
-		table.insert(args, string.format('${workspaceRoot}/%s.sln', wksName))
-		table.insert(args, string.format('/p:Configuration=%s', cfgName))
-		table.insert(args, '/t:Build')
-	end
-
-	return args
+function m.vscode_tasks(prj)
+	local target = path.translate(path.getrelative(prj.workspace.location, prj.location))
+	return GenerateTasks(project.eachconfig(prj), #prj._cfglist,
+		function(cfg)
+			return string.format("Build %s (%s)", prj.name, cfg.name)
+		end,
+		function(sys, action, cfgName, threadCount)
+			return GetCompileCommand(sys, action, cfgName, prj.name, threadCount, false)
+		end,
+		function(cfg, threadCount)
+			return GetVSArgs(prj.workspace.name, cfg.name, target, threadCount, false)
+		end, false)
 end
 
-function m.vscode_tasks_build_all(wks, tasksFile)
-	local output = ""
-
-	for cfg in p.workspace.eachconfig(wks) do
-		local buildName = "Build All (" .. cfg.name .. ")"
-
-		output = output .. '\t\t{\n'
-		output = output .. string.format('\t\t\t"label": "%s",\n', buildName)
-		output = output .. '\t\t\t"type": "shell",\n'
-		if os.target() ~= "windows" then
-			output = output .. '\t\t\t"linux":\n'
-			output = output .. '\t\t\t{\n'
-			output = output .. string.format('\t\t\t\t"command": "%s",\n', m.getlinuxcompileallcommand(cfg.name, m.getcorecount()))
-			output = output .. '\t\t\t\t"problemMatcher": "$gcc",\n'
-			output = output .. '\t\t\t},\n'
-		elseif os.target() == "windows" then
-			output = output .. '\t\t\t"windows":\n'
-			output = output .. '\t\t\t{\n'
-			output = output .. string.format('\t\t\t\t"command": "%s",\n', m.getwindowscompileallcommand(cfg.name, m.getcorecount()))
-			output = output .. '\t\t\t\t"args":\n'
-			output = output .. '\t\t\t\t[\n'
-			local winCompileArgs = m.getwindowscompileallargs(wks.name, cfg.name, m.getcorecount())
-			if winCompileArgs then
-				for arg in winCompileArgs do
-					output = output .. string.format('\t\t\t\t\t"%s",\n', arg)
-				end
-			end
-			output = output .. '\t\t\t\t],\n'
-			output = output .. '\t\t\t\t"problemMatcher": "$msCompile",\n'
-			output = output .. '\t\t\t},\n'
-		end
-		output = output .. '\t\t\t"group":\n'
-		output = output .. '\t\t\t{\n'
-		output = output .. '\t\t\t\t"kind": "build",\n'
-		output = output .. '\t\t\t},\n'
-		output = output .. '\t\t},\n'
-	end
-
-	tasksFile:write(output)
-end
-
-function m.vscode_launch(prj, launchFile)
-	local output = ""
-
-	for cfg in project.eachconfig(prj) do
-		if cfg.kind == "ConsoleApp" or cfg.kind == "WindowedApp" then --Ignore non executable configuration(s) in launch.json
-			local buildName = "Build " .. prj.name .. " (" .. cfg.name .. ")"
-			local target = path.getrelative(prj.workspace.location, prj.location)
-			local gdbPath = ""
-			if os.host() == "linux" then
-				gdbPath = os.outputof("which gdb")
-			end
-			local programPath = path.getrelative(prj.workspace.location, cfg.buildtarget.abspath)
-
-			output = output .. '\t\t{\n'
-			output = output .. string.format('\t\t\t"name": "Run %s (%s)",\n', prj.name, cfg.name)
-			output = output .. '\t\t\t"request": "launch",\n'
-			output = output .. '\t\t\t"type": "cppdbg",\n'
-			output = output .. string.format('\t\t\t"program": "${workspaceRoot}/%s",\n', programPath)
-			if os.target() ~= "windows" then
-				output = output .. '\t\t\t"linux":\n'
-				output = output .. '\t\t\t{\n'
-				output = output .. string.format('\t\t\t\t"name": "Run %s (%s)",\n', prj.name, cfg.name)
-				output = output .. '\t\t\t\t"type": "cppdbg",\n'
-				output = output .. '\t\t\t\t"request": "launch",\n'
-				output = output .. string.format('\t\t\t\t"program": "${workspaceRoot}/%s",\n', programPath)
-				output = output .. '\t\t\t\t"externalConsole": true,\n'
-				output = output .. string.format('\t\t\t\t"miDebuggerPath": "%s",\n', gdbPath)
-				output = output .. '\t\t\t\t"MIMode": "gdb",\n'
-				output = output .. '\t\t\t\t"setupCommands":\n'
-				output = output .. '\t\t\t\t[\n'
-				output = output .. '\t\t\t\t\t{\n'
-				output = output .. '\t\t\t\t\t\t"text": "-enable-pretty-printing",\n'
-				output = output .. '\t\t\t\t\t\t"description": "enable pretty printing",\n'
-				output = output .. '\t\t\t\t\t\t"ignoreFailures": true,\n'
-				output = output .. '\t\t\t\t\t},\n'
-				output = output .. '\t\t\t\t],\n'
-				output = output .. '\t\t\t},\n'
-			elseif os.target() == "windows" then
-				output = output .. '\t\t\t"windows":\n'
-				output = output .. '\t\t\t{\n'
-				output = output .. string.format('\t\t\t\t"name": "Run %s (%s)",\n', prj.name, cfg.name)
-				output = output .. '\t\t\t\t"console": "externalTerminal",\n'
-				output = output .. '\t\t\t\t"type": "cppvsdbg",\n'
-				output = output .. '\t\t\t\t"request": "launch",\n'
-				output = output .. string.format('\t\t\t\t"program": "${workspaceRoot}/%s",\n', programPath)
-				output = output .. '\t\t\t},\n'
-			end
-			output = output .. '\t\t\t"args": [],\n'
-			output = output .. '\t\t\t"stopAtEntry": false,\n'
-			output = output .. string.format('\t\t\t"cwd": "${workspaceFolder}/%s",\n', target)
-			output = output .. '\t\t\t"environment": [],\n'
-			output = output .. string.format('\t\t\t"preLaunchTask": "Build %s (%s)",\n', prj.name, cfg.name)
-			output = output .. '\t\t},\n'
-		end
-	end
-
-	launchFile:write(output)
-end
-
-function m.vscode_c_cpp_properties(prj, propsFile)
-	local cdialect = "${default}"
-	if prj.cdialect then
-		cdialect = string.lower(prj.cdialect)
-	end
-
-	local cppdialect = "${default}"
-	if prj.cppdialect then
-		cppdialect = string.lower(prj.cppdialect)
-	end
-
-	local output = ""
-
-	for cfg in project.eachconfig(prj) do
-		output = output .. '\t\t{\n'
-		output = output .. string.format('\t\t\t"name": "%s (%s)",\n', prj.name, cfg.name)
-		output = output .. '\t\t\t"includePath":\n'
-		output = output .. '\t\t\t[\n'
-		output = output .. '\t\t\t\t"${workspaceFolder}/**"'
-		if #cfg.includedirs > 0 or #cfg.externalincludedirs > 0 then
-			output = output .. ','
-		end
-		output = output .. '\n'
-		for _, includedir in ipairs(cfg.includedirs) do
-			output = output .. string.format('\t\t\t\t"%s",\n', includedir)
-		end
-		for _, includedir in ipairs(cfg.externalincludedirs) do
-			output = output .. string.format('\t\t\t\t"%s",\n', includedir)
-		end
-		if #cfg.includedirs > 0 or #cfg.externalincludedirs > 0 then
-			output = output:sub(1, -3) .. '\n'
-		end
-		output = output .. '\t\t\t],\n'
-		output = output .. '\t\t\t"defines":\n'
-		output = output .. '\t\t\t[\n'
-		for i = 1, #cfg.defines do
-			output = output .. string.format('\t\t\t\t"%s",\n', cfg.defines[i]:gsub('"','\\"'))
-		end
-		if #cfg.defines > 0 then
-			output = output:sub(1, -3) .. '\n'
-		end
-		output = output .. '\t\t\t],\n'
-		output = output .. string.format('\t\t\t"cStandard": "%s",\n', cdialect)
-		output = output .. string.format('\t\t\t"cppStandard": "%s",\n', cppdialect)
-		output = output .. '\t\t\t"intelliSenseMode": "${default}"\n'
-
-		output = output .. '\t\t},\n'
-	end
-
-	propsFile:write(output)
+function m.vscode_tasks_build_all(wks)
+	return GenerateTasks(p.workspace.eachconfig(wks), #p.oven.bakeWorkspace(wks).configs,
+		function(cfg)
+			return string.format("Build All (%s)", cfg.name)
+		end,
+		function(sys, action, cfgName, threadCount)
+			return GetCompileCommand(sys, action, cfgName, nil, threadCount, true)
+		end,
+		function(cfg, threadCount)
+			return GetVSArgs(wks.name, cfg.name, nil, threadCount, true)
+		end, true)
 end
