@@ -54,13 +54,88 @@ local function GetThreadCount()
 	return threads
 end
 
+local function GetvswhereExe()
+	local vswhereExe = "vswhere"
+	local result, errorCode = os.outputof(vswhereExe)
+
+	if errorCode == 0 then
+		return vswhereExe
+	end
+
+	local vswhereExe = [["C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"]]
+	result, errorCode = os.outputof(vswhereExe)
+
+	if errorCode ~= 0 then
+		term.setTextColor(term.errorColor)
+		print("Unable to find " .. vswhereExe)
+		term.setTextColor(nil)
+		return nil
+	end
+
+	return vswhereExe
+end
+
+local __msbuildexe = nil
+local __msbuildexefirst = true
+local function GetMsbuildExe()
+	if not __msbuildexefirst then
+		return __msbuildexe
+	end
+
+	__msbuildexefirst = false
+	local msbuildexeTmp = "msbuild"
+	local result, errorCode = os.outputof(msbuildexeTmp)
+	if errorCode == 0 then
+		__msbuildexe = msbuildexeTmp
+		return __msbuildexe
+	end
+
+	local vswhereExe = GetvswhereExe()
+
+	if vswhereExe == nil then
+		return nil
+	end
+
+	local args = "-products * -requires Microsoft.Component.MSBuild -prerelease -latest -utf8 -format json"
+
+	local result, errorCode = os.outputof(vswhereExe .. " " .. args)
+
+	if errorCode ~= 0 then
+		term.setTextColor(term.errorColor)
+		print("Failed to call vswhere...")
+		term.setTextColor(nil)
+		return nil
+	end
+
+	local res, ec = json.decode(result)
+	if res == nil or ec ~= nil then
+		term.setTextColor(term.errorColor)
+		print("Failed to decode vswhere output...")
+		term.setTextColor(nil)
+		return nil
+	end
+
+	local resCount = #res
+	if resCount <= 0 or res[1]["installationPath"] == nil then
+		term.setTextColor(term.errorColor)
+		print("Failed to retrieve installationPath from vswhere output...")
+		term.setTextColor(nil)
+		return nil
+	end
+
+	local vsInstallPath = res[1]["installationPath"]
+
+	__msbuildexe = vsInstallPath .. "\\MSBuild\\Current\\Bin\\MSBuild.exe"
+	__msbuildexe = __msbuildexe:gsub("\\", "\\\\")
+
+	return __msbuildexe
+end
+
 local function GetCompileCommand(system, action, cfgName, prjName, threadCount, all)
 	local threadArg = string.format("-j%s", threadCount)
 
 	local cmd = ""
-	if system == "windows" then
-		cmd = "cls && "
-	else
+	if system ~= "windows" then
 		cmd = "clear && time "
 	end
 
@@ -69,7 +144,13 @@ local function GetCompileCommand(system, action, cfgName, prjName, threadCount, 
 	elseif action == "ninja" then
 		return cmd .. string.format("ninja %s %s", all and cfgName or string.format("%s_%s", prjName, cfgName), threadArg)
 	elseif action == "vs" and system == "windows" then
-		return cmd .. "msbuild"
+		local msbuildExe = GetMsbuildExe()
+
+		if msbuildExe == nil then
+			return nil
+		end
+
+		return cmd .. msbuildExe
 	end
 
 	return nil
@@ -80,8 +161,13 @@ local function GetVSArgs(wksName, cfgName, target, threadCount, all)
 		return {}
 	end
 
+	if not all then
+		target = target:gsub("\\", "\\\\")
+	end
+
 	return
 	{
+		'/v:m',
 		string.format('/m:%s', threadCount),
 		string.format('${workspaceRoot}/%s.sln', wksName),
 		string.format('/p:Configuration=%s', cfgName),
@@ -165,11 +251,11 @@ function m.vscode_launch(prj, isLast)
 		p.w('"request": "launch",')
 		p.w('"type": "cppdbg",')
 		p.w('"program": "${workspaceRoot}/%s",', programPath)
-		if os.target ~= "linux" then
+		if os.target == "linux" then
 			p.w('"linux":')
 			p.push('{')
 
-			p.w('"externalConsole": true%s', gdbPath and ',' or '')
+			p.w('"externalConsole": true,')
 			if gdbPath then
 				p.w('"miDebuggerPath": "%s",', gdbPath)
 			end
@@ -243,7 +329,7 @@ local function GenerateTasks(cfgs, cfgsSize, nameFn, cmdFn, argsFn, isLast)
 
 			local args = argsFn(cfg, threadCount)
 			for argIdx, arg in ipairs(argsFn(cfg, threadCount)) do
-				p.w('"%s"%s', arg, argIdx == #args and ',' or '')
+				p.w('"%s"%s', arg, argIdx == #args and '' or ',')
 			end
 			p.pop('],')
 

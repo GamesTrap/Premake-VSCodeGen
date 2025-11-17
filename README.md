@@ -18,7 +18,7 @@ premake5 vscode
 premake5 vscode --[make, ninja, vs]
 ```
 
-Note: On Windows make sure that `msbuild.exe` is accessible from CMD. For Ninja please use the [Visual Studio Developer Command Prompt](https://learn.microsoft.com/en-us/visualstudio/ide/reference/command-prompt-powershell).
+Note: For Ninja please use the [Visual Studio Developer Command Prompt](https://learn.microsoft.com/en-us/visualstudio/ide/reference/command-prompt-powershell).
 
 ## Limitations
 
