@@ -15,8 +15,14 @@ Note: For ninja you also need [premake-ninja](https://github.com/GamesTrap/prema
 ```
 premake5 gmake/vs2026
 premake5 vscode
-premake5 vscode --[make, ninja, vs]
+premake5 vscode --[make, ninja, vs] --dbgtype=[cppdbg, lldb]
 ```
+
+### Options
+
+- `--dbgtype=VALUE`: Specifies the debugger type used in the generated `launch.json` (default: `cppdbg`).
+  - `cppdbg`: Use `cppdbg` from the official [ms-vscode.cpptools](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools) extension.
+  - `lldb`: Use `lldb` from the [vadimcn.vscode-lldb](https://marketplace.visualstudio.com/items?itemName=vadimcn.vscode-lldb) (CodeLLDB) extension.
 
 Note: For Ninja please use the [Visual Studio Developer Command Prompt](https://learn.microsoft.com/en-us/visualstudio/ide/reference/command-prompt-powershell).
 
