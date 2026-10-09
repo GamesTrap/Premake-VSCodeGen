@@ -309,17 +309,14 @@ local function GenerateTasks(cfgs, cfgsSize, nameFn, cmdFn, argsFn, isLast)
 
 		p.w('"label": "%s",', buildName)
 		p.w('"type": "shell",')
+		if os.target() == "windows" then
+			p.w('"problemMatcher": "$msCompile",')
+		else
+			p.w('"problemMatcher": "$gcc",')
+		end
 
 		local cmd = cmdFn(os.target(), _OPTIONS["action"], cfg.name, threadCount)
-		if os.target() ~= "windows" then
-			p.w('"linux":')
-			p.push('{')
-
-			p.w('"command": "%s",', cmd)
-			p.w('"problemMatcher": "$gcc"')
-
-			p.pop('},')
-		else
+		if os.target() == "windows" then
 			p.w('"windows":')
 			p.push('{')
 
@@ -331,9 +328,14 @@ local function GenerateTasks(cfgs, cfgsSize, nameFn, cmdFn, argsFn, isLast)
 			for argIdx, arg in ipairs(argsFn(cfg, threadCount)) do
 				p.w('"%s"%s', arg, argIdx == #args and '' or ',')
 			end
-			p.pop('],')
+			p.pop(']')
 
-			p.w('"problemMatcher": "$msCompile"')
+			p.pop('},')
+		else
+			p.w('"linux":')
+			p.push('{')
+
+			p.w('"command": "%s",', cmd)
 
 			p.pop('},')
 		end
