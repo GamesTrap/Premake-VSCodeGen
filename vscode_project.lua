@@ -251,11 +251,11 @@ function m.vscode_launch(prj, isLast)
 		p.w('"request": "launch",')
 		p.w('"type": "cppdbg",')
 		p.w('"program": "${workspaceRoot}/%s",', programPath)
+		p.w('"externalConsole": true,')
 		if os.target() == "linux" then
 			p.w('"linux":')
 			p.push('{')
 
-			p.w('"externalConsole": true,')
 			if gdbPath then
 				p.w('"miDebuggerPath": "%s",', gdbPath)
 			end
@@ -270,13 +270,6 @@ function m.vscode_launch(prj, isLast)
 
 			p.pop('},')
 			p.pop('],')
-			p.pop('},')
-		elseif os.target() == "windows" then
-			p.w('"windows":')
-			p.push('{')
-
-			p.w('"console": "externalTerminal')
-
 			p.pop('},')
 		end
 
