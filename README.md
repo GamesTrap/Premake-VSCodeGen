@@ -13,7 +13,7 @@ Note: For ninja you also need [premake-ninja](https://github.com/GamesTrap/prema
 3. Generate project files and then VSCode workspace
 
 ```
-premake5 gmake2/vs2022
+premake5 gmake/vs2026
 premake5 vscode
 premake5 vscode --[make, ninja, vs]
 ```
@@ -27,9 +27,9 @@ This generator only supports C/C++, all other project types are ignored.
 
 ## What files get generated
 
-This generator generates the following files:
+This generator will generate the following files:
 
-- \<WorkspaceName\>.code-workspace (only if not already exists)
+- \<WorkspaceName\>.code-workspace (only if it doesn't already exist)
 - .vscode/c_cpp_properties.json
 - .vscode/launch.json
 - .vscode/tasks.json
