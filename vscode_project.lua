@@ -251,7 +251,7 @@ function m.vscode_launch(prj, isLast)
 		p.w('"request": "launch",')
 		p.w('"type": "cppdbg",')
 		p.w('"program": "${workspaceRoot}/%s",', programPath)
-		if os.target == "linux" then
+		if os.target() == "linux" then
 			p.w('"linux":')
 			p.push('{')
 
@@ -271,7 +271,7 @@ function m.vscode_launch(prj, isLast)
 			p.pop('},')
 			p.pop('],')
 			p.pop('},')
-		elseif os.target == "windows" then
+		elseif os.target() == "windows" then
 			p.w('"windows":')
 			p.push('{')
 
