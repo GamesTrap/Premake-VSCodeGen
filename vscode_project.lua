@@ -8,7 +8,7 @@
 --              Yehonatan Ballas
 --              Jan "GamesTrap" Schürkamp
 -- Created:     2013/05/06
--- Updated:     2026/11/04
+-- Updated:     2026/10/09
 -- Copyright:   (c) 2008-2020 Yehonatan Ballas, Jason Perkins and the Premake project
 --              (c) 2022-2026 Jan "GamesTrap" Schürkamp
 --
@@ -245,14 +245,16 @@ function m.vscode_launch(prj, isLast)
 		local programPath = path.getrelative(prj.workspace.location, cfg.buildtarget.abspath)
 		local name = string.format("%s (%s)", prj.name, cfg.name)
 
+		local isForCodeLLDB = (_OPTIONS["dbgtype"] == "lldb") or false
+
 		p.push('{')
 
 		p.w('"name": "Run %s",', name)
 		p.w('"request": "launch",')
-		p.w('"type": "cppdbg",')
+		p.w('"type": "' .. (_OPTIONS["dbgtype"] or "cppdbg") .. '",')
 		p.w('"program": "${workspaceRoot}/%s",', programPath)
 		p.w('"externalConsole": true,')
-		if os.target() == "linux" then
+		if os.target() == "linux" and not isForCodeLLDB then
 			p.w('"linux":')
 			p.push('{')
 
@@ -270,11 +272,14 @@ function m.vscode_launch(prj, isLast)
 
 			p.pop('},')
 			p.pop('],')
+
 			p.pop('},')
 		end
 
 		p.w('"args": [],')
-		p.w('"stopAtEntry": false,')
+		if not isForCodeLLDB then
+			p.w('"stopAtEntry": false,')
+		end
 		p.w('"cwd": "${workspaceFolder}/%s",', target)
 		p.w('"environment": [],')
 		p.w('"preLaunchTask": "Build %s"', name)
